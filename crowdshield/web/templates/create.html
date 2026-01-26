@@ -3,20 +3,42 @@
 {% block content %}
 <div class="create-market">
     <h1>Create New Market</h1>
-    <form method="POST" class="create-form">
+    <p class="subtitle">Create a prediction market for crowd safety. Connect your wallet to create markets on-chain.</p>
+
+    <form method="POST" class="create-form" id="create-market-form">
         <div class="form-group">
             <label>Question</label>
-            <input type="text" name="question" placeholder="e.g. Will Place X be overcrowded?" required>
+            <input type="text" name="question" placeholder="e.g. Will Place X be overcrowded during the event?"
+                required>
+            <span class="help-text">The main prediction question for the market.</span>
         </div>
         <div class="form-group">
             <label>Location</label>
-            <input type="text" name="location" placeholder="e.g. Central Plaza" required>
+            <input type="text" name="location" placeholder="e.g. Central Plaza, Main Concert Hall" required>
+            <span class="help-text">Where the crowd prediction applies.</span>
         </div>
         <div class="form-group">
             <label>Threshold Description</label>
             <input type="text" name="threshold" placeholder="e.g. > 15,000 people between 18h-20h" required>
+            <span class="help-text">The specific threshold that determines OVER vs UNDER.</span>
         </div>
-        <button type="submit" class="btn primary">Create Market</button>
+        <div class="form-group">
+            <label>End Time</label>
+            <input type="datetime-local" name="end_time" required>
+            <span class="help-text">When betting closes (must be in the future).</span>
+        </div>
+        <button type="submit" class="btn primary large">Create Market</button>
     </form>
+
+    <div class="create-info">
+        <h3>📋 Market Rules</h3>
+        <ul>
+            <li>Markets accept bets until the end time</li>
+            <li>After deadline, anyone can trigger resolution</li>
+            <li>Oracle reporters vote to determine the outcome</li>
+            <li>Winners claim their proportional share</li>
+            <li>5% fee goes to the Prevention Fund</li>
+        </ul>
+    </div>
 </div>
 {% endblock %}

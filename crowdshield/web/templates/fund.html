@@ -3,14 +3,44 @@
 {% block content %}
 <div class="fund-dashboard">
     <div class="fund-header">
-        <h1>Prevention Fund</h1>
-        <p>Transparently funding safety measures from market fees.</p>
+        <h1>🛡️ Prevention Fund</h1>
+        <p>Transparently funding safety measures from market fees. Every prediction market contributes 5% to this fund.
+        </p>
     </div>
 
     <div class="fund-stats">
-        <div class="stat-box big">
+        <div class="stat-box big primary">
             <span class="label">Current Balance</span>
-            <span class="value">{{ fund.balance | currency }}</span>
+            <span class="value" id="fund-balance">{{ fund.balance }} ꜩ</span>
+        </div>
+        <div class="stat-box">
+            <span class="label">Total Received</span>
+            <span class="value">{{ fund.balance }} ꜩ</span>
+        </div>
+        <div class="stat-box">
+            <span class="label">Total Spent</span>
+            <span class="value">0 ꜩ</span>
+        </div>
+    </div>
+
+    <div class="fund-info">
+        <h2>How It Works</h2>
+        <div class="info-grid">
+            <div class="info-card">
+                <span class="icon">📊</span>
+                <h3>5% from Every Market</h3>
+                <p>When a prediction market resolves, 5% of the total pool is automatically sent to this fund.</p>
+            </div>
+            <div class="info-card">
+                <span class="icon">🔗</span>
+                <h3>On-Chain Transparency</h3>
+                <p>All deposits and spending are recorded on the Tezos blockchain, fully auditable by anyone.</p>
+            </div>
+            <div class="info-card">
+                <span class="icon">🎯</span>
+                <h3>Safety Measures</h3>
+                <p>Funds are spent on crowd safety initiatives: barriers, signage, emergency response, and more.</p>
+            </div>
         </div>
     </div>
 
@@ -31,15 +61,25 @@
                 <tr>
                     <td>{{ expense.timestamp.strftime('%Y-%m-%d') }}</td>
                     <td>{{ expense.description }}</td>
-                    <td>{{ expense.recipient }}</td>
-                    <td>{{ expense.amount | currency }}</td>
+                    <td><code>{{ expense.recipient[:12] }}...</code></td>
+                    <td>{{ expense.amount }} ꜩ</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         {% else %}
-        <p>No expenses yet.</p>
+        <div class="empty-state">
+            <p>No expenses recorded yet. All funds are accumulating for future safety initiatives.</p>
+        </div>
         {% endif %}
+    </div>
+
+    <div class="contract-info">
+        <h3>Smart Contract</h3>
+        <p>View the Prevention Fund contract on the blockchain:</p>
+        <a href="#" class="contract-link" id="fund-contract-link">
+            View on TzKT Explorer →
+        </a>
     </div>
 </div>
 {% endblock %}

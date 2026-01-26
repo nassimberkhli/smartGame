@@ -3,18 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CrowdShield</title>
+    <title>CrowdShield - Crowd Safety Prediction Market</title>
+    <meta name="description" content="Community-driven prediction market for crowd safety on Tezos blockchain">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Taquito & Beacon SDK -->
+    <script src="https://unpkg.com/@taquito/taquito@17.3.0/dist/taquito.min.js"></script>
+    <script src="https://unpkg.com/@airgap/beacon-sdk@4.1.0/dist/walletbeacon.min.js"></script>
 </head>
 <body>
     <nav>
         <div class="container nav-container">
-            <a href="/" class="logo">CrowdShield</a>
+            <a href="/" class="logo">
+                <span class="logo-icon">🛡️</span>
+                CrowdShield
+            </a>
             <div class="nav-links">
                 <a href="/">Markets</a>
                 <a href="/create">Create Market</a>
                 <a href="/fund">Prevention Fund</a>
+            </div>
+            <div class="wallet-section">
+                <button id="wallet-connect-btn" class="btn wallet-btn">
+                    Connect Wallet
+                </button>
+                <div id="wallet-actions" style="display: none;">
+                    <span id="wallet-address" class="wallet-address"></span>
+                    <button id="wallet-disconnect-btn" class="btn small">Disconnect</button>
+                </div>
             </div>
         </div>
     </nav>
@@ -35,8 +52,16 @@
 
     <footer>
         <div class="container">
-            <p>&copy; 2026 CrowdShield. Community-driven safety.</p>
+            <div class="footer-content">
+                <p>&copy; 2026 CrowdShield. Community-driven safety on Tezos.</p>
+                <div class="footer-links">
+                    <span class="network-badge">Ghostnet Testnet</span>
+                </div>
+            </div>
         </div>
     </footer>
+
+    <!-- Tezos integration -->
+    <script src="{{ url_for('static', filename='tezos.js') }}"></script>
 </body>
 </html>

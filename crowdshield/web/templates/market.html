@@ -5,63 +5,140 @@
     <div class="market-header">
         <span class="status {{ market.status.value.lower() }}">{{ market.status.value }}</span>
         <h1>{{ market.question }}</h1>
-        <p class="location-time">{{ market.location }} • Ends: {{ market.end_time.strftime('%Y-%m-%d %H:%M') }}</p>
+        <p class="location-time">
+            <span class="location">📍 {{ market.location }}</span>
+            <span class="separator">•</span>
+            <span class="end-time">⏰ Ends: {{ market.end_time.strftime('%Y-%m-%d %H:%M') }}</span>
+        </p>
         <p class="threshold-large">{{ market.threshold_desc }}</p>
     </div>
 
     <div class="stats-grid">
         <div class="stat-box">
-            <span class="label">Total Pot</span>
-            <span class="value">{{ market.total_pool | currency }}</span>
+            <span class="label">Total Pool</span>
+            <span class="value">{{ market.total_pool }} ꜩ</span>
         </div>
-        <div class="stat-box">
-            <span class="label">Over Pool</span>
-            <span class="value">{{ market.pool_over | currency }}</span>
+        <div class="stat-box over">
+            <span class="label">OVER Pool</span>
+            <span class="value">{{ market.pool_over }} ꜩ</span>
+            {% if market.total_pool > 0 %}
+            <span class="percentage">{{ "%.1f"|format(market.pool_over / market.total_pool * 100) }}%</span>
+            {% endif %}
         </div>
-        <div class="stat-box">
-            <span class="label">Under Pool</span>
-            <span class="value">{{ market.pool_under | currency }}</span>
+        <div class="stat-box under">
+            <span class="label">UNDER Pool</span>
+            <span class="value">{{ market.pool_under }} ꜩ</span>
+            {% if market.total_pool > 0 %}
+            <span class="percentage">{{ "%.1f"|format(market.pool_under / market.total_pool * 100) }}%</span>
+            {% endif %}
         </div>
     </div>
 
     {% if market.status.value == 'OPEN' %}
+    <!-- OPEN: Betting is active -->
     <div class="betting-section">
         <h2>Place Your Bet</h2>
-        <form method="POST" class="bet-form">
+        <p class="wallet-notice" id="wallet-notice">
+            Connect your wallet to place bets with real tez on Tezos blockchain.
+        </p>
+        <form id="bet-form" data-market-id="{{ market.id }}" class="bet-form">
             <div class="form-group">
                 <label>Choose Side</label>
                 <div class="radio-group">
-                    <label class="radio-card">
+                    <label class="radio-card over-card">
                         <input type="radio" name="side" value="OVER" checked>
-                        <span class="radio-content">OVER</span>
+                        <span class="radio-content">
+                            <span class="side-label">OVER</span>
+                            <span class="side-desc">Crowd will exceed threshold</span>
+                        </span>
                     </label>
-                    <label class="radio-card">
+                    <label class="radio-card under-card">
                         <input type="radio" name="side" value="UNDER">
-                        <span class="radio-content">UNDER</span>
+                        <span class="radio-content">
+                            <span class="side-label">UNDER</span>
+                            <span class="side-desc">Crowd will be below threshold</span>
+                        </span>
                     </label>
                 </div>
             </div>
             <div class="form-group">
-                <label>Amount (€)</label>
-                <input type="number" name="amount" min="1" max="{{ user.balance }}" value="10" required>
+                <label>Amount (ꜩ)</label>
+                <input type="number" name="amount" min="0.1" step="0.1" value="10" required>
             </div>
-            <button type="submit" class="btn primary">Place Bet</button>
+            <button type="submit" class="btn primary large">Place Bet</button>
         </form>
     </div>
 
-    <!-- Admin/Oracle Section for Demo -->
-    <div class="admin-section">
-        <h3>Oracle Actions (Demo)</h3>
-        <form action="{{ url_for('resolve_market', market_id=market.id) }}" method="POST" class="inline-form">
-            <button type="submit" name="result" value="OVER" class="btn small">Resolve OVER</button>
-            <button type="submit" name="result" value="UNDER" class="btn small">Resolve UNDER</button>
-        </form>
+    <!-- After deadline: Show start resolving button -->
+    <div class="resolving-trigger" id="resolving-trigger" style="display: none;">
+        <h3>Betting Period Ended</h3>
+        <p>The betting deadline has passed. Start the resolution process to allow the oracle to determine the outcome.
+        </p>
+        <button id="start-resolving-btn" data-market-id="{{ market.id }}" class="btn secondary">
+            Start Resolution
+        </button>
     </div>
+
+    {% elif market.status.value == 'RESOLVING' %}
+    <!-- RESOLVING: Waiting for oracle -->
+    <div class="resolving-section">
+        <div class="resolving-indicator">
+            <div class="spinner"></div>
+            <h2>Awaiting Oracle Resolution</h2>
+        </div>
+        <p>The market is being resolved by the decentralized oracle network.</p>
+        <div class="oracle-info">
+            <h3>How it works:</h3>
+            <ol>
+                <li>Reporters commit their votes (hidden)</li>
+                <li>Reporters reveal their votes</li>
+                <li>Majority determines the outcome</li>
+                <li>Results are submitted to the market contract</li>
+            </ol>
+        </div>
+    </div>
+
     {% elif market.status.value == 'RESOLVED' %}
+    <!-- RESOLVED: Show result and claim button -->
     <div class="result-section">
-        <h2>Market Resolved: {{ market.result.value }}</h2>
-        <p>Winnings have been distributed.</p>
+        <div class="result-banner {{ market.result.value.lower() }}">
+            <h2>Market Resolved</h2>
+            <div class="result-value">{{ market.result.value }}</div>
+        </div>
+
+        <div class="claim-section">
+            <h3>Claim Your Winnings</h3>
+            <p>If you bet on {{ market.result.value }}, you can claim your proportional share of the pool.</p>
+            <button id="claim-btn" data-market-id="{{ market.id }}" class="btn primary large">
+                Claim Winnings
+            </button>
+        </div>
+
+        <div class="payout-info">
+            <h3>Payout Details</h3>
+            <ul>
+                <li><strong>Total Pool:</strong> {{ market.total_pool }} ꜩ</li>
+                <li><strong>Fee (5%):</strong> {{ market.total_pool * 0.05 }} ꜩ → Prevention Fund</li>
+                <li><strong>Distributable:</strong> {{ market.total_pool * 0.95 }} ꜩ</li>
+                <li><strong>Winning Pool ({{ market.result.value }}):</strong>
+                    {% if market.result.value == 'OVER' %}{{ market.pool_over }}{% else %}{{ market.pool_under }}{%
+                    endif %} ꜩ
+                </li>
+            </ul>
+        </div>
     </div>
     {% endif %}
 </div>
+
+<script>
+    // Check if betting deadline has passed for OPEN markets
+    {% if market.status.value == 'OPEN' %}
+    const endTime = new Date('{{ market.end_time.isoformat() }}');
+    const now = new Date();
+    if (now >= endTime) {
+        document.querySelector('.betting-section').style.display = 'none';
+        document.getElementById('resolving-trigger').style.display = 'block';
+    }
+    {% endif %}
+</script>
 {% endblock %}

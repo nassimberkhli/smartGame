@@ -2,33 +2,59 @@
 
 {% block content %}
 <div class="hero">
-    <h1>Predict Crowds. Fund Safety.</h1>
-    <p>Join the community to predict crowd risks and automatically fund prevention measures.</p>
-    <div class="user-balance">
-        Your Balance: <strong>{{ user.balance | currency }}</strong>
+    <div class="hero-content">
+        <h1>Predict Crowds. Fund Safety.</h1>
+        <p>Join the decentralized prediction market to forecast crowd risks and automatically fund prevention measures
+            on Tezos blockchain.</p>
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <span class="value">{{ markets|length }}</span>
+                <span class="label">Active Markets</span>
+            </div>
+            <div class="hero-stat">
+                <span class="value">5%</span>
+                <span class="label">Goes to Safety Fund</span>
+            </div>
+        </div>
     </div>
 </div>
 
 <div class="market-list">
-    <h2>Active Markets</h2>
+    <div class="section-header">
+        <h2>Prediction Markets</h2>
+        <a href="/create" class="btn primary">+ Create Market</a>
+    </div>
+
     {% if markets %}
     <div class="grid">
         {% for market in markets %}
         <a href="{{ url_for('market_detail', market_id=market.id) }}" class="card market-card">
             <div class="card-header">
                 <span class="status {{ market.status.value.lower() }}">{{ market.status.value }}</span>
-                <span class="location">{{ market.location }}</span>
+                <span class="location">📍 {{ market.location }}</span>
             </div>
             <h3>{{ market.question }}</h3>
             <p class="threshold">{{ market.threshold_desc }}</p>
+            <div class="pool-bar">
+                {% if market.total_pool > 0 %}
+                <div class="pool-over" style="width: {{ (market.pool_over / market.total_pool * 100)|round }}%"></div>
+                {% endif %}
+            </div>
+            <div class="pool-labels">
+                <span class="over-label">OVER: {{ market.pool_over }} ꜩ</span>
+                <span class="under-label">UNDER: {{ market.pool_under }} ꜩ</span>
+            </div>
             <div class="pot-info">
-                <span>Total Pot: {{ market.total_pool | currency }}</span>
+                <span class="total">Total Pool: <strong>{{ market.total_pool }} ꜩ</strong></span>
             </div>
         </a>
         {% endfor %}
     </div>
     {% else %}
-    <p>No active markets. <a href="/create">Create one?</a></p>
+    <div class="empty-state">
+        <p>No active markets yet.</p>
+        <a href="/create" class="btn primary">Create the first market</a>
+    </div>
     {% endif %}
 </div>
 {% endblock %}
