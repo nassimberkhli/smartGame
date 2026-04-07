@@ -1,0 +1,122 @@
+## TON RÔLE
+
+    - Tu es un développeur Senior qui fournit un code ultrat propre et performant
+    en pensant au moindre détail. 
+
+## LE PROJET
+
+### Objectif
+    - Développer un smart contract en SmartPy où deux joueurs misent chacun 10 tez sur le résultat d’une simulation.
+    - À la fin, la simulation produit un résultat binaire :
+      - 0 : le joueur 1 gagne
+      - 1 : le joueur 2 gagne
+    - Le gagnant récupère les 20 tez.
+
+### Contraintes principales
+    - Le contrat doit permettre à deux joueurs de participer.
+    - Le contrat doit imposer à chacun un dépôt de 10 tez.
+    - Le contrat doit déterminer le gagnant à partir d’une simulation calculée dans le contrat.
+    - Le contrat doit empêcher toute triche.
+    - Le contrat doit fonctionner sans tiers de confiance ni oracle.
+    - Le contrat doit minimiser le coût en gas.
+    - Le contrat doit inclure des tests de bonne qualité.
+
+### Exigences de sécurité
+    - Le résultat ne doit pas pouvoir être contrôlé par un seul joueur.
+    - Pour cela :
+      - les deux joueurs doivent fournir des données initiales
+      - le résultat final doit dépendre uniquement de ces données
+      - aucun acteur externe ne doit intervenir
+
+    - Le contrat doit aussi empêcher les comportements suivants :
+      - choisir sa valeur après avoir vu celle de l’autre
+      - bloquer volontairement la partie
+      - manipuler l’exécution pour gagner injustement
+
+### Idée de simulation
+    - La simulation repose sur un automate cellulaire binaire.
+
+#### Principe
+    - Chaque joueur choisit une valeur secrète.
+    - Les deux valeurs sont combinées pour former un état initial en bits.
+    - Le contrat exécute plusieurs itérations de l’automate.
+    - Un bit final est extrait.
+    - Ce bit désigne le gagnant.
+
+### Construction de l’état initial
+    - Les deux secrets peuvent être combinés de façon déterministe, par exemple :
+      - XOR
+      - concaténation
+      - autre transformation simple
+
+    - Le résultat forme une ligne initiale de cellules binaires.
+
+### Règle de simulation
+    - À chaque tour, chaque cellule est recalculée selon :
+      - la cellule de gauche
+      - la cellule centrale
+      - la cellule de droite
+
+### Résultat final
+    - Après toutes les itérations, le résultat peut être défini par exemple par :
+      - le bit central
+      - la parité du nombre total de 1
+      - le XOR de toutes les cellules
+
+### Contrainte technique majeure
+    - La simulation demandée porte sur :
+      - 10 000 bits
+      - 10 000 tours
+
+    - Cela rend une implémentation naïve très coûteuse, voire impossible à exécuter directement on-chain.
+
+### Enjeu principal
+    - Le vrai défi du projet est double :
+      - garantir la sécurité et l’équité entre les joueurs
+      - concevoir une architecture très optimisée en gas
+
+### Points à gérer dans le contrat
+    - Le contrat doit inclure :
+      - l’inscription des deux joueurs
+      - le dépôt des mises
+      - la soumission sécurisée des données initiales
+      - le déroulement de la simulation
+      - le calcul du résultat final
+      - le paiement du gagnant
+      - éventuellement des délais ou pénalités si un joueur bloque le processus
+
+### Attendu final
+    - Le rendu doit contenir :
+      - un smart contract SmartPy
+      - une architecture sécurisée et optimisée
+      - des tests couvrant les cas normaux et les cas d’erreur
+
+### Architecture du projet
+    .
+    ├── create_venv.sh
+    ├── run.sh (utilise `create_venv.sh` si pas déjà fais)
+    ├── tests.sh (utilise `run.sh`)
+    ├── .gitignore
+    ├── contracts/
+    │   ├── main.py
+    │   ├── contract.py
+    │   ├── simulation.py
+    │   ├── utils.py
+    │   └── errors.py
+    └── tests/
+        ├── test_contract.py
+        ├── test_simulation.py
+        └── test_security.py
+
+## CE QUE TU DOIS FOURNIR
+
+    - Le code de tous les fichiés STRICTEMENT sous cette forme :
+    "
+        ## `/file/path`
+        ```
+        code
+        ```
+        ---
+    "
+    n'écrit rien d'autre.
+
