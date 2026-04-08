@@ -92,7 +92,7 @@ This script:
 
 - prepares the environment
 - runs Python test files from `tests/`
-- shows clear logs in English
+- shows clear logs
 
 ---
 
