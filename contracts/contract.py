@@ -19,6 +19,9 @@ def bet_contract():
         reduced = shifted_value - ((shifted_value >> 1) << 1)
         return nat_bit_from_raw(reduced)
 
+    def reduce_shift_128(value):
+        return sp.as_nat(value - ((value >> 7) << 7))
+
     def initial_bit(params):
         half_bits = params.total_bits >> 1
 
@@ -27,14 +30,14 @@ def bet_contract():
             bit = extract_bit(
                 sp.record(
                     value=params.secret1,
-                    shift=params.index,
+                    shift=reduce_shift_128(params.index),
                 )
             )
         else:
             bit = extract_bit(
                 sp.record(
                     value=params.secret2,
-                    shift=sp.as_nat(params.index - half_bits),
+                    shift=reduce_shift_128(sp.as_nat(params.index - half_bits)),
                 )
             )
 

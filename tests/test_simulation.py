@@ -79,6 +79,30 @@ def test_reference_equivalence():
     success("Full simulation and batched simulation are equivalent for all cases.")
 
 
+def test_initial_state_reuses_128_secret_bits():
+    info(
+        "Checking that initial state reuses secret bits when total_bits is greater than 128."
+    )
+
+    secret1 = 0b1011
+    secret2 = 0b0110
+    state = build_initial_state(secret1, secret2, 512)
+
+    assert len(state) == 512
+
+    assert state[0] == state[128]
+    assert state[1] == state[129]
+    assert state[2] == state[130]
+    assert state[3] == state[131]
+
+    assert state[256] == state[384]
+    assert state[257] == state[385]
+    assert state[258] == state[386]
+    assert state[259] == state[387]
+
+    success("Initial state reuses the 128 secret bits correctly.")
+
+
 def test_output_is_binary():
     info("Checking that the simulation output is strictly binary.")
     _, bit = run_batched_simulation(5, 6, 16, 8, 4, 4)
@@ -91,4 +115,5 @@ if __name__ == "__main__":
     test_rule150_uses_left_center_and_right()
     test_reference_equivalence()
     test_output_is_binary()
+    test_initial_state_reuses_128_secret_bits()
     success("test_simulation.py completed successfully.")

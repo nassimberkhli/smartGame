@@ -9,21 +9,22 @@ def extract_bit(value: int, shift: int) -> int:
     return (value >> shift) & 1
 
 
+def reduce_shift_128(value: int) -> int:
+    return value % SECRET_BITS
+
+
 def initial_bit(secret1: int, secret2: int, index: int, total_bits: int) -> int:
     half_bits = total_bits // 2
 
     if index < half_bits:
-        return extract_bit(secret1, index)
+        return extract_bit(secret1, reduce_shift_128(index))
 
-    return extract_bit(secret2, index - half_bits)
+    return extract_bit(secret2, reduce_shift_128(index - half_bits))
 
 
 def build_initial_state(secret1: int, secret2: int, total_bits: int) -> list[int]:
     if total_bits <= 0 or total_bits % 2 != 0:
         raise ValueError("total_bits must be a positive even integer")
-
-    if total_bits > SECRET_BITS:
-        raise ValueError("total_bits must not exceed SECRET_BITS")
 
     return [initial_bit(secret1, secret2, i, total_bits) for i in range(total_bits)]
 
@@ -78,7 +79,9 @@ def run_batched_simulation(
     while init_cursor < total_bits:
         for _ in range(init_batch_size):
             if init_cursor < total_bits:
-                state0[init_cursor] = initial_bit(secret1, secret2, init_cursor, total_bits)
+                state0[init_cursor] = initial_bit(
+                    secret1, secret2, init_cursor, total_bits
+                )
                 init_cursor += 1
 
     active = 0
@@ -92,7 +95,9 @@ def run_batched_simulation(
                 dst = state1 if active == 0 else state0
 
                 left_index = total_bits - 1 if current_index == 0 else current_index - 1
-                right_index = 0 if current_index + 1 == total_bits else current_index + 1
+                right_index = (
+                    0 if current_index + 1 == total_bits else current_index + 1
+                )
 
                 dst[current_index] = (
                     src[left_index] ^ src[current_index] ^ src[right_index]
