@@ -42,6 +42,7 @@ def test_reference_equivalence():
         (7, 9, 16, 8, 4, 4),
         (42, 1337, 32, 12, 5, 7),
         (123456789, 987654321, 64, 16, 8, 8),
+        (123456789, 987654321, 512, 16, 8, 8),
     ]
 
     for index, (
@@ -114,6 +115,6 @@ if __name__ == "__main__":
     test_initial_state_is_deterministic_concatenation()
     test_rule150_uses_left_center_and_right()
     test_reference_equivalence()
-    test_output_is_binary()
     test_initial_state_reuses_128_secret_bits()
+    test_output_is_binary()
     success("test_simulation.py completed successfully.")

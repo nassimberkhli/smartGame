@@ -3,46 +3,6 @@ import smartpy as sp
 
 @sp.module
 def bet_contract():
-    def state_key(params):
-        return params.buffer * params.total_bits + params.index
-
-    def nat_bit_from_raw(raw_value):
-        bit = sp.nat(0)
-        if raw_value == 0:
-            bit = sp.nat(0)
-        else:
-            bit = sp.nat(1)
-        return bit
-
-    def extract_bit(params):
-        shifted_value = params.value >> params.shift
-        reduced = shifted_value - ((shifted_value >> 1) << 1)
-        return nat_bit_from_raw(reduced)
-
-    def reduce_shift_128(value):
-        return sp.as_nat(value - ((value >> 7) << 7))
-
-    def initial_bit(params):
-        half_bits = params.total_bits >> 1
-
-        bit = sp.nat(0)
-        if params.index < half_bits:
-            bit = extract_bit(
-                sp.record(
-                    value=params.secret1,
-                    shift=reduce_shift_128(params.index),
-                )
-            )
-        else:
-            bit = extract_bit(
-                sp.record(
-                    value=params.secret2,
-                    shift=reduce_shift_128(sp.as_nat(params.index - half_bits)),
-                )
-            )
-
-        return bit
-
     def commitment_of(params):
         payload = sp.record(
             player=params.player,
@@ -50,6 +10,23 @@ def bet_contract():
             salt=params.salt,
         )
         return sp.blake2b(sp.pack(payload))
+
+    def result_commitment_of(params):
+        payload = sp.record(
+            player=params.player,
+            final_bit=params.final_bit,
+            salt=params.salt,
+        )
+        return sp.blake2b(sp.pack(payload))
+
+    def credit_to_tez(credit):
+        amount = sp.tez(0)
+        if credit == sp.nat(10):
+            amount = sp.tez(10)
+        else:
+            if credit == sp.nat(20):
+                amount = sp.tez(20)
+        return amount
 
     class BinaryAutomatonBet(sp.Contract):
         def __init__(
@@ -70,6 +47,12 @@ def bet_contract():
             self.data.player2_secret = None
             self.data.player1_revealed = False
             self.data.player2_revealed = False
+            self.data.player1_result_commitment = None
+            self.data.player2_result_commitment = None
+            self.data.player1_result_revealed = False
+            self.data.player2_result_revealed = False
+            self.data.player1_result = None
+            self.data.player2_result = None
             self.data.join_deadline = None
             self.data.reveal_deadline = None
             self.data.progress_deadline = None
@@ -84,11 +67,8 @@ def bet_contract():
             self.data.total_rounds = total_rounds
             self.data.init_batch_size = init_batch_size
             self.data.sim_batch_size = sim_batch_size
-            self.data.init_cursor = sp.nat(0)
-            self.data.current_round = sp.nat(0)
-            self.data.current_index = sp.nat(0)
-            self.data.active_buffer = sp.nat(0)
-            self.data.states = sp.big_map()
+            self.data.player1_credit = sp.nat(0)
+            self.data.player2_credit = sp.nat(0)
 
             sp.cast(
                 self.data,
@@ -101,6 +81,12 @@ def bet_contract():
                     player2_secret=sp.option[sp.nat],
                     player1_revealed=sp.bool,
                     player2_revealed=sp.bool,
+                    player1_result_commitment=sp.option[sp.bytes],
+                    player2_result_commitment=sp.option[sp.bytes],
+                    player1_result_revealed=sp.bool,
+                    player2_result_revealed=sp.bool,
+                    player1_result=sp.option[sp.nat],
+                    player2_result=sp.option[sp.nat],
                     join_deadline=sp.option[sp.timestamp],
                     reveal_deadline=sp.option[sp.timestamp],
                     progress_deadline=sp.option[sp.timestamp],
@@ -115,11 +101,8 @@ def bet_contract():
                     total_rounds=sp.nat,
                     init_batch_size=sp.nat,
                     sim_batch_size=sp.nat,
-                    init_cursor=sp.nat,
-                    current_round=sp.nat,
-                    current_index=sp.nat,
-                    active_buffer=sp.nat,
-                    states=sp.big_map[sp.nat, sp.nat],
+                    player1_credit=sp.nat,
+                    player2_credit=sp.nat,
                 ),
             )
 
@@ -206,7 +189,9 @@ def bet_contract():
                     )
 
         @sp.entrypoint
-        def initialize_batch(self):
+        def commit_result(self, commitment):
+            sp.cast(commitment, sp.bytes)
+
             assert not self.data.finished, "GAME_ALREADY_FINISHED"
             assert self.data.phase == sp.nat(1), "BAD_PHASE"
             assert self.data.progress_deadline.is_some(), "NOTHING_TO_CLAIM"
@@ -214,169 +199,113 @@ def bet_contract():
                 "REVEAL_PHASE_OVER"
             )
 
-            for _ in range(self.data.init_batch_size):
-                if self.data.init_cursor < self.data.total_bits:
-                    raw_bit = initial_bit(
-                        sp.record(
-                            secret1=self.data.player1_secret.unwrap_some(),
-                            secret2=self.data.player2_secret.unwrap_some(),
-                            index=self.data.init_cursor,
-                            total_bits=self.data.total_bits,
-                        )
-                    )
-
-                    bit = sp.nat(0)
-                    if raw_bit == 0:
-                        bit = sp.nat(0)
-                    else:
-                        bit = sp.nat(1)
-
-                    key0 = state_key(
-                        sp.record(
-                            buffer=sp.nat(0),
-                            total_bits=self.data.total_bits,
-                            index=self.data.init_cursor,
-                        )
-                    )
-
-                    self.data.states[key0] = bit
-                    self.data.init_cursor += 1
+            if sp.sender == self.data.player1.unwrap_some():
+                assert self.data.player1_result_commitment.is_none(), "ALREADY_REVEALED"
+                self.data.player1_result_commitment = sp.Some(commitment)
+            else:
+                assert sp.sender == self.data.player2.unwrap_some(), (
+                    "PLAYER_NOT_REGISTERED"
+                )
+                assert self.data.player2_result_commitment.is_none(), "ALREADY_REVEALED"
+                self.data.player2_result_commitment = sp.Some(commitment)
 
             self.data.progress_deadline = sp.Some(
                 sp.add_seconds(sp.now, self.data.progress_window_seconds)
             )
 
-            if self.data.init_cursor == self.data.total_bits:
-                self.data.phase = sp.nat(2)
-                self.data.current_round = sp.nat(0)
-                self.data.current_index = sp.nat(0)
-                self.data.active_buffer = sp.nat(0)
+            if self.data.player1_result_commitment.is_some():
+                if self.data.player2_result_commitment.is_some():
+                    self.data.phase = sp.nat(2)
 
         @sp.entrypoint
-        def simulate_batch(self):
+        def reveal_result(self, params):
+            sp.cast(params, sp.record(final_bit=sp.nat, salt=sp.bytes))
+
             assert not self.data.finished, "GAME_ALREADY_FINISHED"
             assert self.data.phase == sp.nat(2), "BAD_PHASE"
             assert self.data.progress_deadline.is_some(), "NOTHING_TO_CLAIM"
             assert sp.now <= self.data.progress_deadline.unwrap_some(), (
                 "REVEAL_PHASE_OVER"
             )
+            assert params.final_bit == sp.nat(0) or params.final_bit == sp.nat(1), (
+                "INVALID_FINAL_BIT"
+            )
 
-            for _ in range(self.data.sim_batch_size):
-                if self.data.current_round < self.data.total_rounds:
-                    source_buffer = self.data.active_buffer
-
-                    target_buffer = sp.nat(0)
-                    if self.data.active_buffer == sp.nat(0):
-                        target_buffer = sp.nat(1)
-                    else:
-                        target_buffer = sp.nat(0)
-
-                    left_index = sp.nat(0)
-                    if self.data.current_index == sp.nat(0):
-                        left_index = sp.as_nat(self.data.total_bits - 1)
-                    else:
-                        left_index = sp.as_nat(self.data.current_index - 1)
-
-                    center_index = self.data.current_index
-                    next_index = self.data.current_index + 1
-
-                    right_index = sp.nat(0)
-                    if next_index == self.data.total_bits:
-                        right_index = sp.nat(0)
-                    else:
-                        right_index = next_index
-
-                    left_key = state_key(
+            if sp.sender == self.data.player1.unwrap_some():
+                assert not self.data.player1_result_revealed, "ALREADY_REVEALED"
+                assert (
+                    result_commitment_of(
                         sp.record(
-                            buffer=source_buffer,
-                            total_bits=self.data.total_bits,
-                            index=left_index,
+                            player=sp.sender,
+                            final_bit=params.final_bit,
+                            salt=params.salt,
                         )
                     )
-                    center_key = state_key(
-                        sp.record(
-                            buffer=source_buffer,
-                            total_bits=self.data.total_bits,
-                            index=center_index,
-                        )
-                    )
-                    right_key = state_key(
-                        sp.record(
-                            buffer=source_buffer,
-                            total_bits=self.data.total_bits,
-                            index=right_index,
-                        )
-                    )
-
-                    left_value = self.data.states.get(left_key, default=sp.nat(0))
-                    center_value = self.data.states.get(center_key, default=sp.nat(0))
-                    right_value = self.data.states.get(right_key, default=sp.nat(0))
-
-                    left_center_value = sp.nat(0)
-                    if left_value == center_value:
-                        left_center_value = sp.nat(0)
-                    else:
-                        left_center_value = sp.nat(1)
-
-                    new_value = sp.nat(0)
-                    if left_center_value == right_value:
-                        new_value = sp.nat(0)
-                    else:
-                        new_value = sp.nat(1)
-
-                    target_key = state_key(
-                        sp.record(
-                            buffer=target_buffer,
-                            total_bits=self.data.total_bits,
-                            index=self.data.current_index,
-                        )
-                    )
-
-                    self.data.states[target_key] = new_value
-                    self.data.current_index = next_index
-
-                    if self.data.current_index == self.data.total_bits:
-                        self.data.current_index = sp.nat(0)
-                        self.data.current_round += 1
-                        self.data.active_buffer = target_buffer
-
-                        if self.data.current_round == self.data.total_rounds:
-                            center_index = self.data.total_bits >> 1
-                            center_key = state_key(
-                                sp.record(
-                                    buffer=self.data.active_buffer,
-                                    total_bits=self.data.total_bits,
-                                    index=center_index,
-                                )
-                            )
-
-                            final_bit_raw = self.data.states.get(
-                                center_key,
-                                default=sp.nat(0),
-                            )
-
-                            final_bit = sp.nat(0)
-                            if final_bit_raw == 0:
-                                final_bit = sp.nat(0)
-                            else:
-                                final_bit = sp.nat(1)
-
-                            self.data.finished = True
-                            self.data.phase = sp.nat(3)
-                            self.data.outcome_bit = sp.Some(final_bit)
-                            self.data.progress_deadline = None
-
-                            if final_bit == sp.nat(0):
-                                self.data.winner = self.data.player1
-                                sp.send(self.data.player1.unwrap_some(), sp.balance)
-                            else:
-                                self.data.winner = self.data.player2
-                                sp.send(self.data.player2.unwrap_some(), sp.balance)
-
-            if not self.data.finished:
-                self.data.progress_deadline = sp.Some(
-                    sp.add_seconds(sp.now, self.data.progress_window_seconds)
+                    == self.data.player1_result_commitment.unwrap_some()
+                ), "INVALID_COMMITMENT"
+                self.data.player1_result = sp.Some(params.final_bit)
+                self.data.player1_result_revealed = True
+            else:
+                assert sp.sender == self.data.player2.unwrap_some(), (
+                    "PLAYER_NOT_REGISTERED"
                 )
+                assert not self.data.player2_result_revealed, "ALREADY_REVEALED"
+                assert (
+                    result_commitment_of(
+                        sp.record(
+                            player=sp.sender,
+                            final_bit=params.final_bit,
+                            salt=params.salt,
+                        )
+                    )
+                    == self.data.player2_result_commitment.unwrap_some()
+                ), "INVALID_COMMITMENT"
+                self.data.player2_result = sp.Some(params.final_bit)
+                self.data.player2_result_revealed = True
+
+            self.data.progress_deadline = sp.Some(
+                sp.add_seconds(sp.now, self.data.progress_window_seconds)
+            )
+
+            if self.data.player1_result_revealed:
+                if self.data.player2_result_revealed:
+                    assert (
+                        self.data.player1_result.unwrap_some()
+                        == self.data.player2_result.unwrap_some()
+                    ), "RESULT_MISMATCH"
+
+                    final_bit = self.data.player1_result.unwrap_some()
+
+                    self.data.finished = True
+                    self.data.phase = sp.nat(3)
+                    self.data.outcome_bit = sp.Some(final_bit)
+                    self.data.progress_deadline = None
+
+                    if final_bit == sp.nat(0):
+                        self.data.winner = self.data.player1
+                        self.data.player1_credit = sp.nat(20)
+                    else:
+                        self.data.winner = self.data.player2
+                        self.data.player2_credit = sp.nat(20)
+
+        @sp.entrypoint
+        def claim(self):
+            assert self.data.finished, "NOTHING_TO_CLAIM"
+
+            if sp.sender == self.data.player1.unwrap_some():
+                assert self.data.player1_credit > 0, "NOTHING_TO_CLAIM"
+                amount = credit_to_tez(self.data.player1_credit)
+                self.data.player1_credit = sp.nat(0)
+                sp.send(sp.sender, amount)
+            else:
+                assert self.data.player2.is_some(), "PLAYER_NOT_REGISTERED"
+                assert sp.sender == self.data.player2.unwrap_some(), (
+                    "PLAYER_NOT_REGISTERED"
+                )
+                assert self.data.player2_credit > 0, "NOTHING_TO_CLAIM"
+                amount = credit_to_tez(self.data.player2_credit)
+                self.data.player2_credit = sp.nat(0)
+                sp.send(sp.sender, amount)
 
         @sp.entrypoint
         def claim_timeout(self):
@@ -395,7 +324,7 @@ def bet_contract():
                     self.data.winner = self.data.player1
                     self.data.outcome_bit = None
                     self.data.progress_deadline = None
-                    sp.send(self.data.player1.unwrap_some(), sp.balance)
+                    self.data.player1_credit = sp.nat(10)
                 else:
                     assert self.data.reveal_deadline.is_some(), "NOTHING_TO_CLAIM"
                     assert sp.now > self.data.reveal_deadline.unwrap_some(), (
@@ -411,7 +340,7 @@ def bet_contract():
                             self.data.winner = self.data.player1
                             self.data.outcome_bit = None
                             self.data.progress_deadline = None
-                            sp.send(self.data.player1.unwrap_some(), sp.balance)
+                            self.data.player1_credit = sp.nat(20)
                     else:
                         if self.data.player2_revealed:
                             self.data.finished = True
@@ -419,15 +348,15 @@ def bet_contract():
                             self.data.winner = self.data.player2
                             self.data.outcome_bit = None
                             self.data.progress_deadline = None
-                            sp.send(self.data.player2.unwrap_some(), sp.balance)
+                            self.data.player2_credit = sp.nat(20)
                         else:
                             self.data.finished = True
                             self.data.phase = sp.nat(3)
                             self.data.winner = None
                             self.data.outcome_bit = None
                             self.data.progress_deadline = None
-                            sp.send(self.data.player1.unwrap_some(), sp.tez(10))
-                            sp.send(self.data.player2.unwrap_some(), sp.tez(10))
+                            self.data.player1_credit = sp.nat(10)
+                            self.data.player2_credit = sp.nat(10)
             else:
                 assert self.data.phase == sp.nat(1) or self.data.phase == sp.nat(2), (
                     "BAD_PHASE"
@@ -443,5 +372,5 @@ def bet_contract():
                 self.data.winner = None
                 self.data.outcome_bit = None
                 self.data.progress_deadline = None
-                sp.send(self.data.player1.unwrap_some(), sp.tez(10))
-                sp.send(self.data.player2.unwrap_some(), sp.tez(10))
+                self.data.player1_credit = sp.nat(10)
+                self.data.player2_credit = sp.nat(10)

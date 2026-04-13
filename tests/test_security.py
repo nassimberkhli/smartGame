@@ -1,6 +1,7 @@
 import smartpy as sp
 
 from contracts.contract import bet_contract
+from contracts.simulation import run_batched_simulation
 from contracts.utils import (
     JOIN_WINDOW_SECONDS,
     PROGRESS_WINDOW_SECONDS,
@@ -16,6 +17,11 @@ TEST_SIM_BATCH_SIZE = 8
 
 def make_commitment(player_address, secret, salt):
     payload = sp.record(player=player_address, secret=secret, salt=salt)
+    return sp.blake2b(sp.pack(payload))
+
+
+def make_result_commitment(player_address, final_bit, salt):
+    payload = sp.record(player=player_address, final_bit=final_bit, salt=salt)
     return sp.blake2b(sp.pack(payload))
 
 
@@ -45,6 +51,8 @@ def test_security_failures():
     bob_secret = 34
     alice_salt = sp.bytes("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     bob_salt = sp.bytes("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    alice_result_salt = sp.bytes("0xcccccccccccccccccccccccccccccccc")
+    bob_result_salt = sp.bytes("0xdddddddddddddddddddddddddddddddd")
 
     alice_commitment = make_commitment(alice.address, alice_secret, alice_salt)
     bob_commitment = make_commitment(bob.address, bob_secret, bob_salt)
@@ -128,6 +136,88 @@ def test_security_failures():
         _exception="REVEAL_PHASE_OVER",
     )
 
+    info("Preparing a fresh game to check result commitment failures.")
+    scenario = sp.test_scenario()
+
+    alice = sp.test_account("alice")
+    bob = sp.test_account("bob")
+    charlie = sp.test_account("charlie")
+
+    contract = bet_contract.BinaryAutomatonBet(
+        JOIN_WINDOW_SECONDS,
+        60,
+        PROGRESS_WINDOW_SECONDS,
+        TEST_TOTAL_BITS,
+        TEST_TOTAL_ROUNDS,
+        TEST_INIT_BATCH_SIZE,
+        TEST_SIM_BATCH_SIZE,
+    )
+    scenario += contract
+
+    alice_commitment = make_commitment(alice.address, alice_secret, alice_salt)
+    bob_commitment = make_commitment(bob.address, bob_secret, bob_salt)
+
+    contract.join(
+        alice_commitment,
+        _sender=alice,
+        _amount=sp.tez(10),
+        _now=sp.timestamp(0),
+    )
+    contract.join(
+        bob_commitment,
+        _sender=bob,
+        _amount=sp.tez(10),
+        _now=sp.timestamp(1),
+    )
+    contract.reveal(
+        sp.record(secret=alice_secret, salt=alice_salt),
+        _sender=alice,
+        _now=sp.timestamp(2),
+    )
+    contract.reveal(
+        sp.record(secret=bob_secret, salt=bob_salt),
+        _sender=bob,
+        _now=sp.timestamp(3),
+    )
+
+    _, expected = run_batched_simulation(
+        alice_secret,
+        bob_secret,
+        TEST_TOTAL_BITS,
+        TEST_TOTAL_ROUNDS,
+        TEST_INIT_BATCH_SIZE,
+        TEST_SIM_BATCH_SIZE,
+    )
+
+    contract.commit_result(
+        make_result_commitment(alice.address, expected, alice_result_salt),
+        _sender=alice,
+        _now=sp.timestamp(4),
+    )
+    contract.commit_result(
+        make_result_commitment(bob.address, expected, bob_result_salt),
+        _sender=bob,
+        _now=sp.timestamp(5),
+    )
+
+    info("Rejecting an invalid result reveal from Alice.")
+    contract.reveal_result(
+        sp.record(final_bit=sp.nat(1), salt=alice_result_salt),
+        _sender=alice,
+        _now=sp.timestamp(6),
+        _valid=False,
+        _exception="INVALID_COMMITMENT",
+    )
+
+    info("Rejecting a result reveal from a non-registered player.")
+    contract.reveal_result(
+        sp.record(final_bit=expected, salt=bob_result_salt),
+        _sender=charlie,
+        _now=sp.timestamp(7),
+        _valid=False,
+        _exception="PLAYER_NOT_REGISTERED",
+    )
+
     success("Security failure checks completed successfully.")
 
 
@@ -186,6 +276,13 @@ def test_timeout_rewards_revealer():
 
     scenario.verify(contract.data.finished)
     scenario.verify(contract.data.winner.unwrap_some() == alice.address)
+    scenario.verify(contract.data.player1_credit == sp.nat(20))
+
+    contract.claim(
+        _sender=alice,
+        _now=sp.timestamp(21),
+    )
+
     scenario.verify(contract.balance == sp.tez(0))
 
     success("Reveal-timeout reward test completed successfully.")
@@ -194,7 +291,7 @@ def test_timeout_rewards_revealer():
 @sp.add_test()
 def test_progress_timeout_refunds_both_players():
     section("Smart contract progress-timeout refund test")
-    info("Creating SmartPy scenario where both players reveal but the simulation stops progressing.")
+    info("Creating SmartPy scenario where both players reveal but the result workflow stops progressing.")
 
     scenario = sp.test_scenario()
 
@@ -251,9 +348,109 @@ def test_progress_timeout_refunds_both_players():
 
     scenario.verify(contract.data.finished)
     scenario.verify(contract.data.winner.is_none())
+    scenario.verify(contract.data.player1_credit == sp.nat(10))
+    scenario.verify(contract.data.player2_credit == sp.nat(10))
+
+    contract.claim(
+        _sender=alice,
+        _now=sp.timestamp(21),
+    )
+    contract.claim(
+        _sender=bob,
+        _now=sp.timestamp(22),
+    )
+
     scenario.verify(contract.balance == sp.tez(0))
 
     success("Progress-timeout refund test completed successfully.")
+
+
+@sp.add_test()
+def test_result_mismatch_refund_path():
+    section("Smart contract mismatch timeout test")
+    info("Creating SmartPy scenario where players commit conflicting off-chain results.")
+
+    scenario = sp.test_scenario()
+
+    alice = sp.test_account("alice")
+    bob = sp.test_account("bob")
+
+    contract = bet_contract.BinaryAutomatonBet(
+        JOIN_WINDOW_SECONDS,
+        60,
+        10,
+        TEST_TOTAL_BITS,
+        TEST_TOTAL_ROUNDS,
+        TEST_INIT_BATCH_SIZE,
+        TEST_SIM_BATCH_SIZE,
+    )
+    scenario += contract
+
+    alice_secret = 5
+    bob_secret = 6
+    alice_salt = sp.bytes("0x01010101010101010101010101010101")
+    bob_salt = sp.bytes("0x02020202020202020202020202020202")
+    alice_result_salt = sp.bytes("0x03030303030303030303030303030303")
+    bob_result_salt = sp.bytes("0x04040404040404040404040404040404")
+
+    contract.join(
+        make_commitment(alice.address, alice_secret, alice_salt),
+        _sender=alice,
+        _amount=sp.tez(10),
+        _now=sp.timestamp(0),
+    )
+    contract.join(
+        make_commitment(bob.address, bob_secret, bob_salt),
+        _sender=bob,
+        _amount=sp.tez(10),
+        _now=sp.timestamp(1),
+    )
+    contract.reveal(
+        sp.record(secret=alice_secret, salt=alice_salt),
+        _sender=alice,
+        _now=sp.timestamp(2),
+    )
+    contract.reveal(
+        sp.record(secret=bob_secret, salt=bob_salt),
+        _sender=bob,
+        _now=sp.timestamp(3),
+    )
+
+    contract.commit_result(
+        make_result_commitment(alice.address, 0, alice_result_salt),
+        _sender=alice,
+        _now=sp.timestamp(4),
+    )
+    contract.commit_result(
+        make_result_commitment(bob.address, 1, bob_result_salt),
+        _sender=bob,
+        _now=sp.timestamp(5),
+    )
+
+    contract.reveal_result(
+        sp.record(final_bit=0, salt=alice_result_salt),
+        _sender=alice,
+        _now=sp.timestamp(6),
+    )
+    contract.reveal_result(
+        sp.record(final_bit=1, salt=bob_result_salt),
+        _sender=bob,
+        _now=sp.timestamp(7),
+        _valid=False,
+        _exception="RESULT_MISMATCH",
+    )
+
+    contract.claim_timeout(
+        _sender=alice,
+        _now=sp.timestamp(20),
+    )
+
+    scenario.verify(contract.data.finished)
+    scenario.verify(contract.data.winner.is_none())
+    scenario.verify(contract.data.player1_credit == sp.nat(10))
+    scenario.verify(contract.data.player2_credit == sp.nat(10))
+
+    success("Mismatch timeout path completed successfully.")
 
 
 if __name__ == "__main__":

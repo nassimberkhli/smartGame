@@ -5,6 +5,10 @@ def commitment_payload(player_address, secret, salt):
     return {"player": player_address, "secret": secret, "salt": salt}
 
 
+def result_commitment_payload(player_address, final_bit, salt):
+    return {"player": player_address, "final_bit": final_bit, "salt": salt}
+
+
 def extract_bit(value: int, shift: int) -> int:
     return (value >> shift) & 1
 
