@@ -2,10 +2,12 @@
 
 smartGame is a SmartPy project for a two-player betting game based on a binary cellular automaton.
 
-Each player commits a secret value, both players reveal their secrets, and the contract runs a deterministic simulation. The final output bit decides the winner:
+The project now uses a **hybrid settlement model**:
 
-- `0` → player 1 wins
-- `1` → player 2 wins
+- **fast path**: both players reveal the same final bit off-chain and the contract pays immediately
+- **forced path**: if they disagree or one refuses to finish the result workflow, the contract can compute the result on-chain **in batches**
+
+This keeps the normal case cheap while ensuring that a dishonest loser cannot block the true winner forever.
 
 The winner receives the full pot of `20 tez`.
 
@@ -49,13 +51,6 @@ Prepare the virtual environment and install dependencies:
 ./create_venv.sh
 ```
 
-This script:
-
-- creates `.venv` if needed
-- reuses it if it already exists
-- installs or updates required dependencies
-- falls back to Docker if no compatible local Python is found
-
 ---
 
 ## Manual simulation
@@ -66,17 +61,9 @@ Run the interactive simulator:
 ./run.sh
 ```
 
-You will be asked to enter:
-
-- player 1 secret
-- player 2 secret
-
-The project parameters are fixed in code.
-
-The simulator then prints:
-
-- the final bit
-- the winning player
+This runs the **Python reference simulation only**.
+It does **not** execute the SmartPy contract.
+It is useful to inspect the deterministic result for two secrets.
 
 ---
 
@@ -87,12 +74,6 @@ Execute all tests with:
 ```bash
 ./tests.sh
 ```
-
-This script:
-
-- prepares the environment
-- runs Python test files from `tests/`
-- shows clear logs
 
 ---
 
@@ -108,8 +89,6 @@ A commitment is a hash of:
 - secret
 - salt
 
-This prevents a player from changing their secret later.
-
 ### 2. Reveal phase
 
 Each player reveals:
@@ -119,20 +98,42 @@ Each player reveals:
 
 The contract verifies that the revealed data matches the original commitment.
 
-### 3. Initialization phase
+### 3. Quick result phase
 
-The contract builds the initial automaton state from both secrets.
+Each player may publish a commitment to the final bit, then reveal it.
 
-### 4. Simulation phase
+- if both reveal the **same** final bit, the contract settles immediately
+- if they disagree, the contract switches to forced on-chain resolution
+- if one player stops cooperating, anyone can push the contract to forced resolution after timeout
 
-The contract runs the cellular automaton in batches.
+### 4. Forced initialization phase
 
-### 5. Final result
+The contract reconstructs the initial automaton state from the two revealed secrets in batches.
 
-The contract extracts the final bit from the center of the final state:
+### 5. Forced simulation phase
+
+The contract executes the rule-150 ring automaton in batches until all rounds are completed.
+
+### 6. Final settlement
+
+The center bit of the final state decides the winner:
 
 - `0` → player 1 wins
 - `1` → player 2 wins
+
+---
+
+## Why this design is safer
+
+The previous design had a weakness:
+
+- if both players did not agree on the final bit, the game could end in a refund
+
+The new design removes that weakness:
+
+- agreement gives a cheap fast path
+- disagreement triggers batched on-chain computation
+- the true winner can still be determined automatically
 
 ---
 
@@ -147,22 +148,16 @@ The project includes protections for:
 - non-registered reveal
 - timeout before second player joins
 - timeout during reveal
-- timeout during progress after reveal
+- disagreement on the final result
+- non-cooperation during the quick result workflow
 
 The contract uses:
 
-- commit-reveal
+- commit-reveal for secrets
+- optional commit-reveal for quick result settlement
 - deterministic state generation
 - deterministic simulation
-- timeout handling
-
----
-
-## Notes
-
-- `run.sh` is for manual interactive simulation
-- `tests.sh` is for automated tests
-- test parameters are intentionally smaller than a production-scale configuration to keep execution fast
+- forced batched on-chain settlement when needed
 
 ---
 
@@ -174,10 +169,11 @@ SmartPy contract implementing:
 
 - join
 - reveal
-- batched initialization
-- batched simulation
-- timeout claims
-- winner payout
+- quick result commit / reveal
+- forced batched initialization
+- forced batched simulation
+- timeout handling
+- payout
 
 ### `contracts/simulation.py`
 
@@ -193,7 +189,7 @@ Checks the simulation logic.
 
 ### `tests/test_contract.py`
 
-Checks the contract happy path and timeout behavior.
+Checks the contract fast path and forced path.
 
 ### `tests/test_security.py`
 
@@ -203,7 +199,7 @@ Checks failure cases and security scenarios.
 
 ## Recommended usage
 
-For normal work:
+For normal local inspection:
 
 ```bash
 ./run.sh
@@ -220,17 +216,3 @@ For verification:
 ## Warning
 
 Do not run project scripts with `sudo` unless absolutely necessary.
-
-Using `sudo` may:
-
-- break `.venv` permissions
-- mix user and root-owned files
-- cause confusing environment issues
-
-Preferred usage:
-
-```bash
-./create_venv.sh
-./run.sh
-./tests.sh
-```
