@@ -32,6 +32,48 @@ def bet_contract():
                 amount = sp.tez(20)
         return amount
 
+    def get_checkpoint_pair(idx, player1_cp1, player1_cp2, player1_cp3, player1_cp4,
+                            player2_cp1, player2_cp2, player2_cp3, player2_cp4):
+        """Retourne la paire de checkpoints à l'index donné"""
+        result = (player1_cp1, player2_cp1)
+        if idx == 0:
+            result = (player1_cp1, player2_cp1)
+        else:
+            if idx == 1:
+                result = (player1_cp2, player2_cp2)
+            else:
+                if idx == 2:
+                    result = (player1_cp3, player2_cp3)
+                else:
+                    result = (player1_cp4, player2_cp4)
+        return result
+
+    def determine_dispute_range(checkpoint_index, checkpoints_match, 
+                                checkpoint_round_1, checkpoint_round_2,
+                               checkpoint_round_3, checkpoint_round_4, total_rounds):
+        """Détermine la plage de dispute basée sur l'index du checkpoint différent"""
+        low = sp.nat(0)
+        high = checkpoint_round_1
+        if checkpoint_index == 0:
+            low = sp.nat(0)
+            high = checkpoint_round_1
+        else:
+            if checkpoint_index == 1:
+                low = checkpoint_round_1
+                high = checkpoint_round_2
+            else:
+                if checkpoint_index == 2:
+                    low = checkpoint_round_2
+                    high = checkpoint_round_3
+                else:
+                    if checkpoint_index == 3:
+                        low = checkpoint_round_3
+                        high = checkpoint_round_4
+                    else:
+                        low = checkpoint_round_4
+                        high = total_rounds
+        return (low, high)
+
     class BinaryAutomatonBet(sp.Contract):
         def __init__(
             self,
@@ -341,324 +383,53 @@ def bet_contract():
                 sp.add_seconds(sp.now, self.data.progress_window_seconds)
             )
 
-            if self.data.player1_trace_revealed:
-                if self.data.player2_trace_revealed:
-                    if (
-                        self.data.player1_final_bit.unwrap_some()
-                        == self.data.player2_final_bit.unwrap_some()
-                    ):
-                        if (
-                            self.data.player1_checkpoint1.unwrap_some()
-                            == self.data.player2_checkpoint1.unwrap_some()
-                        ):
-                            if (
-                                self.data.player1_checkpoint2.unwrap_some()
-                                == self.data.player2_checkpoint2.unwrap_some()
-                            ):
-                                if (
-                                    self.data.player1_checkpoint3.unwrap_some()
-                                    == self.data.player2_checkpoint3.unwrap_some()
-                                ):
-                                    if (
-                                        self.data.player1_checkpoint4.unwrap_some()
-                                        == self.data.player2_checkpoint4.unwrap_some()
-                                    ):
-                                        if (
-                                            self.data.player1_final_bit.unwrap_some()
-                                            == sp.nat(0)
-                                        ):
-                                            self.data.finished = True
-                                            self.data.phase = sp.nat(5)
-                                            self.data.winner = self.data.player1
-                                            self.data.outcome_bit = sp.Some(
-                                                self.data.player1_final_bit.unwrap_some()
-                                            )
-                                            self.data.progress_deadline = None
-                                            self.data.player1_credit = sp.nat(20)
-                                            self.data.player2_credit = sp.nat(0)
-                                        else:
-                                            self.data.finished = True
-                                            self.data.phase = sp.nat(5)
-                                            self.data.winner = self.data.player2
-                                            self.data.outcome_bit = sp.Some(
-                                                self.data.player1_final_bit.unwrap_some()
-                                            )
-                                            self.data.progress_deadline = None
-                                            self.data.player1_credit = sp.nat(0)
-                                            self.data.player2_credit = sp.nat(20)
-                                    else:
-                                        self.data.phase = sp.nat(4)
-                                        self.data.progress_deadline = sp.Some(
-                                            sp.add_seconds(
-                                                sp.now,
-                                                self.data.progress_window_seconds,
-                                            )
-                                        )
-                                        self.data.player1_query_round = None
-                                        self.data.player2_query_round = None
-                                        self.data.player1_query_hash = None
-                                        self.data.player2_query_hash = None
-                                        self.data.player1_query_proof = None
-                                        self.data.player2_query_proof = None
+            # Refactored: Check if both traces revealed and if they match
+            both_revealed = (
+                self.data.player1_trace_revealed and self.data.player2_trace_revealed
+            )
+            if both_revealed:
+                final_bits_match = (
+                    self.data.player1_final_bit.unwrap_some()
+                    == self.data.player2_final_bit.unwrap_some()
+                )
+                if not final_bits_match:
+                    # Final bits differ - open dispute from checkpoint 0
+                    self.data.phase = sp.nat(4)
+                    self.data.progress_deadline = sp.Some(
+                        sp.add_seconds(sp.now, self.data.progress_window_seconds)
+                    )
+                    self.data.player1_query_round = None
+                    self.data.player2_query_round = None
+                    self.data.player1_query_hash = None
+                    self.data.player2_query_hash = None
+                    self.data.player1_query_proof = None
+                    self.data.player2_query_proof = None
+                    self.data.dispute_low_round = sp.Some(sp.nat(0))
+                    self.data.dispute_high_round = sp.Some(self.data.checkpoint_round_1)
+                else:
+                    # Final bits match, check checkpoints sequentially
+                    cp1_match = (
+                        self.data.player1_checkpoint1.unwrap_some()
+                        == self.data.player2_checkpoint1.unwrap_some()
+                    )
+                    cp2_match = (
+                        self.data.player1_checkpoint2.unwrap_some()
+                        == self.data.player2_checkpoint2.unwrap_some()
+                    )
+                    cp3_match = (
+                        self.data.player1_checkpoint3.unwrap_some()
+                        == self.data.player2_checkpoint3.unwrap_some()
+                    )
+                    cp4_match = (
+                        self.data.player1_checkpoint4.unwrap_some()
+                        == self.data.player2_checkpoint4.unwrap_some()
+                    )
 
-                                        if (
-                                            self.data.player1_checkpoint1.unwrap_some()
-                                            == self.data.player2_checkpoint1.unwrap_some()
-                                        ):
-                                            if (
-                                                self.data.player1_checkpoint2.unwrap_some()
-                                                == self.data.player2_checkpoint2.unwrap_some()
-                                            ):
-                                                if (
-                                                    self.data.player1_checkpoint3.unwrap_some()
-                                                    == self.data.player2_checkpoint3.unwrap_some()
-                                                ):
-                                                    if (
-                                                        self.data.player1_checkpoint4.unwrap_some()
-                                                        == self.data.player2_checkpoint4.unwrap_some()
-                                                    ):
-                                                        self.data.dispute_low_round = sp.Some(
-                                                            self.data.checkpoint_round_4
-                                                        )
-                                                        self.data.dispute_high_round = (
-                                                            sp.Some(
-                                                                self.data.total_rounds
-                                                            )
-                                                        )
-                                                    else:
-                                                        self.data.dispute_low_round = sp.Some(
-                                                            self.data.checkpoint_round_3
-                                                        )
-                                                        self.data.dispute_high_round = sp.Some(
-                                                            self.data.checkpoint_round_4
-                                                        )
-                                                else:
-                                                    self.data.dispute_low_round = (
-                                                        sp.Some(
-                                                            self.data.checkpoint_round_2
-                                                        )
-                                                    )
-                                                    self.data.dispute_high_round = (
-                                                        sp.Some(
-                                                            self.data.checkpoint_round_3
-                                                        )
-                                                    )
-                                            else:
-                                                self.data.dispute_low_round = sp.Some(
-                                                    self.data.checkpoint_round_1
-                                                )
-                                                self.data.dispute_high_round = sp.Some(
-                                                    self.data.checkpoint_round_2
-                                                )
-                                        else:
-                                            self.data.dispute_low_round = sp.Some(
-                                                sp.nat(0)
-                                            )
-                                            self.data.dispute_high_round = sp.Some(
-                                                self.data.checkpoint_round_1
-                                            )
-                                else:
-                                    self.data.phase = sp.nat(4)
-                                    self.data.progress_deadline = sp.Some(
-                                        sp.add_seconds(
-                                            sp.now,
-                                            self.data.progress_window_seconds,
-                                        )
-                                    )
-                                    self.data.player1_query_round = None
-                                    self.data.player2_query_round = None
-                                    self.data.player1_query_hash = None
-                                    self.data.player2_query_hash = None
-                                    self.data.player1_query_proof = None
-                                    self.data.player2_query_proof = None
-
-                                    if (
-                                        self.data.player1_checkpoint1.unwrap_some()
-                                        == self.data.player2_checkpoint1.unwrap_some()
-                                    ):
-                                        if (
-                                            self.data.player1_checkpoint2.unwrap_some()
-                                            == self.data.player2_checkpoint2.unwrap_some()
-                                        ):
-                                            if (
-                                                self.data.player1_checkpoint3.unwrap_some()
-                                                == self.data.player2_checkpoint3.unwrap_some()
-                                            ):
-                                                if (
-                                                    self.data.player1_checkpoint4.unwrap_some()
-                                                    == self.data.player2_checkpoint4.unwrap_some()
-                                                ):
-                                                    self.data.dispute_low_round = (
-                                                        sp.Some(
-                                                            self.data.checkpoint_round_4
-                                                        )
-                                                    )
-                                                    self.data.dispute_high_round = (
-                                                        sp.Some(self.data.total_rounds)
-                                                    )
-                                                else:
-                                                    self.data.dispute_low_round = (
-                                                        sp.Some(
-                                                            self.data.checkpoint_round_3
-                                                        )
-                                                    )
-                                                    self.data.dispute_high_round = (
-                                                        sp.Some(
-                                                            self.data.checkpoint_round_4
-                                                        )
-                                                    )
-                                            else:
-                                                self.data.dispute_low_round = sp.Some(
-                                                    self.data.checkpoint_round_2
-                                                )
-                                                self.data.dispute_high_round = sp.Some(
-                                                    self.data.checkpoint_round_3
-                                                )
-                                        else:
-                                            self.data.dispute_low_round = sp.Some(
-                                                self.data.checkpoint_round_1
-                                            )
-                                            self.data.dispute_high_round = sp.Some(
-                                                self.data.checkpoint_round_2
-                                            )
-                                    else:
-                                        self.data.dispute_low_round = sp.Some(sp.nat(0))
-                                        self.data.dispute_high_round = sp.Some(
-                                            self.data.checkpoint_round_1
-                                        )
-                            else:
-                                self.data.phase = sp.nat(4)
-                                self.data.progress_deadline = sp.Some(
-                                    sp.add_seconds(
-                                        sp.now,
-                                        self.data.progress_window_seconds,
-                                    )
-                                )
-                                self.data.player1_query_round = None
-                                self.data.player2_query_round = None
-                                self.data.player1_query_hash = None
-                                self.data.player2_query_hash = None
-                                self.data.player1_query_proof = None
-                                self.data.player2_query_proof = None
-
-                                if (
-                                    self.data.player1_checkpoint1.unwrap_some()
-                                    == self.data.player2_checkpoint1.unwrap_some()
-                                ):
-                                    if (
-                                        self.data.player1_checkpoint2.unwrap_some()
-                                        == self.data.player2_checkpoint2.unwrap_some()
-                                    ):
-                                        if (
-                                            self.data.player1_checkpoint3.unwrap_some()
-                                            == self.data.player2_checkpoint3.unwrap_some()
-                                        ):
-                                            if (
-                                                self.data.player1_checkpoint4.unwrap_some()
-                                                == self.data.player2_checkpoint4.unwrap_some()
-                                            ):
-                                                self.data.dispute_low_round = sp.Some(
-                                                    self.data.checkpoint_round_4
-                                                )
-                                                self.data.dispute_high_round = sp.Some(
-                                                    self.data.total_rounds
-                                                )
-                                            else:
-                                                self.data.dispute_low_round = sp.Some(
-                                                    self.data.checkpoint_round_3
-                                                )
-                                                self.data.dispute_high_round = sp.Some(
-                                                    self.data.checkpoint_round_4
-                                                )
-                                        else:
-                                            self.data.dispute_low_round = sp.Some(
-                                                self.data.checkpoint_round_2
-                                            )
-                                            self.data.dispute_high_round = sp.Some(
-                                                self.data.checkpoint_round_3
-                                            )
-                                    else:
-                                        self.data.dispute_low_round = sp.Some(
-                                            self.data.checkpoint_round_1
-                                        )
-                                        self.data.dispute_high_round = sp.Some(
-                                            self.data.checkpoint_round_2
-                                        )
-                                else:
-                                    self.data.dispute_low_round = sp.Some(sp.nat(0))
-                                    self.data.dispute_high_round = sp.Some(
-                                        self.data.checkpoint_round_1
-                                    )
-                        else:
-                            self.data.phase = sp.nat(4)
-                            self.data.progress_deadline = sp.Some(
-                                sp.add_seconds(
-                                    sp.now,
-                                    self.data.progress_window_seconds,
-                                )
-                            )
-                            self.data.player1_query_round = None
-                            self.data.player2_query_round = None
-                            self.data.player1_query_hash = None
-                            self.data.player2_query_hash = None
-                            self.data.player1_query_proof = None
-                            self.data.player2_query_proof = None
-
-                            if (
-                                self.data.player1_checkpoint1.unwrap_some()
-                                == self.data.player2_checkpoint1.unwrap_some()
-                            ):
-                                if (
-                                    self.data.player1_checkpoint2.unwrap_some()
-                                    == self.data.player2_checkpoint2.unwrap_some()
-                                ):
-                                    if (
-                                        self.data.player1_checkpoint3.unwrap_some()
-                                        == self.data.player2_checkpoint3.unwrap_some()
-                                    ):
-                                        if (
-                                            self.data.player1_checkpoint4.unwrap_some()
-                                            == self.data.player2_checkpoint4.unwrap_some()
-                                        ):
-                                            self.data.dispute_low_round = sp.Some(
-                                                self.data.checkpoint_round_4
-                                            )
-                                            self.data.dispute_high_round = sp.Some(
-                                                self.data.total_rounds
-                                            )
-                                        else:
-                                            self.data.dispute_low_round = sp.Some(
-                                                self.data.checkpoint_round_3
-                                            )
-                                            self.data.dispute_high_round = sp.Some(
-                                                self.data.checkpoint_round_4
-                                            )
-                                    else:
-                                        self.data.dispute_low_round = sp.Some(
-                                            self.data.checkpoint_round_2
-                                        )
-                                        self.data.dispute_high_round = sp.Some(
-                                            self.data.checkpoint_round_3
-                                        )
-                                else:
-                                    self.data.dispute_low_round = sp.Some(
-                                        self.data.checkpoint_round_1
-                                    )
-                                    self.data.dispute_high_round = sp.Some(
-                                        self.data.checkpoint_round_2
-                                    )
-                            else:
-                                self.data.dispute_low_round = sp.Some(sp.nat(0))
-                                self.data.dispute_high_round = sp.Some(
-                                    self.data.checkpoint_round_1
-                                )
-                    else:
+                    # No checkpoints match case
+                    if not cp1_match:
                         self.data.phase = sp.nat(4)
                         self.data.progress_deadline = sp.Some(
-                            sp.add_seconds(
-                                sp.now,
-                                self.data.progress_window_seconds,
-                            )
+                            sp.add_seconds(sp.now, self.data.progress_window_seconds)
                         )
                         self.data.player1_query_round = None
                         self.data.player2_query_round = None
@@ -666,55 +437,65 @@ def bet_contract():
                         self.data.player2_query_hash = None
                         self.data.player1_query_proof = None
                         self.data.player2_query_proof = None
-
-                        if (
-                            self.data.player1_checkpoint1.unwrap_some()
-                            == self.data.player2_checkpoint1.unwrap_some()
-                        ):
-                            if (
-                                self.data.player1_checkpoint2.unwrap_some()
-                                == self.data.player2_checkpoint2.unwrap_some()
-                            ):
-                                if (
-                                    self.data.player1_checkpoint3.unwrap_some()
-                                    == self.data.player2_checkpoint3.unwrap_some()
-                                ):
-                                    if (
-                                        self.data.player1_checkpoint4.unwrap_some()
-                                        == self.data.player2_checkpoint4.unwrap_some()
-                                    ):
-                                        self.data.dispute_low_round = sp.Some(
-                                            self.data.checkpoint_round_4
-                                        )
-                                        self.data.dispute_high_round = sp.Some(
-                                            self.data.total_rounds
-                                        )
-                                    else:
-                                        self.data.dispute_low_round = sp.Some(
-                                            self.data.checkpoint_round_3
-                                        )
-                                        self.data.dispute_high_round = sp.Some(
-                                            self.data.checkpoint_round_4
-                                        )
-                                else:
-                                    self.data.dispute_low_round = sp.Some(
-                                        self.data.checkpoint_round_2
-                                    )
-                                    self.data.dispute_high_round = sp.Some(
-                                        self.data.checkpoint_round_3
-                                    )
-                            else:
-                                self.data.dispute_low_round = sp.Some(
-                                    self.data.checkpoint_round_1
-                                )
-                                self.data.dispute_high_round = sp.Some(
-                                    self.data.checkpoint_round_2
-                                )
-                        else:
-                            self.data.dispute_low_round = sp.Some(sp.nat(0))
-                            self.data.dispute_high_round = sp.Some(
-                                self.data.checkpoint_round_1
+                        self.data.dispute_low_round = sp.Some(sp.nat(0))
+                        self.data.dispute_high_round = sp.Some(self.data.checkpoint_round_1)
+                    else:
+                        if not cp2_match:
+                            self.data.phase = sp.nat(4)
+                            self.data.progress_deadline = sp.Some(
+                                sp.add_seconds(sp.now, self.data.progress_window_seconds)
                             )
+                            self.data.player1_query_round = None
+                            self.data.player2_query_round = None
+                            self.data.player1_query_hash = None
+                            self.data.player2_query_hash = None
+                            self.data.player1_query_proof = None
+                            self.data.player2_query_proof = None
+                            self.data.dispute_low_round = sp.Some(self.data.checkpoint_round_1)
+                            self.data.dispute_high_round = sp.Some(self.data.checkpoint_round_2)
+                        else:
+                            if not cp3_match:
+                                self.data.phase = sp.nat(4)
+                                self.data.progress_deadline = sp.Some(
+                                    sp.add_seconds(sp.now, self.data.progress_window_seconds)
+                                )
+                                self.data.player1_query_round = None
+                                self.data.player2_query_round = None
+                                self.data.player1_query_hash = None
+                                self.data.player2_query_hash = None
+                                self.data.player1_query_proof = None
+                                self.data.player2_query_proof = None
+                                self.data.dispute_low_round = sp.Some(self.data.checkpoint_round_2)
+                                self.data.dispute_high_round = sp.Some(self.data.checkpoint_round_3)
+                            else:
+                                if not cp4_match:
+                                    self.data.phase = sp.nat(4)
+                                    self.data.progress_deadline = sp.Some(
+                                        sp.add_seconds(sp.now, self.data.progress_window_seconds)
+                                    )
+                                    self.data.player1_query_round = None
+                                    self.data.player2_query_round = None
+                                    self.data.player1_query_hash = None
+                                    self.data.player2_query_hash = None
+                                    self.data.player1_query_proof = None
+                                    self.data.player2_query_proof = None
+                                    self.data.dispute_low_round = sp.Some(self.data.checkpoint_round_3)
+                                    self.data.dispute_high_round = sp.Some(self.data.checkpoint_round_4)
+                                else:
+                                    # All checkpoints match - game ends
+                                    self.data.finished = True
+                                    self.data.phase = sp.nat(5)
+                                    self.data.progress_deadline = None
+                                    if self.data.player1_final_bit.unwrap_some() == sp.nat(0):
+                                        self.data.winner = self.data.player1
+                                        self.data.outcome_bit = sp.Some(sp.nat(0))
+                                        self.data.player1_credit = sp.nat(20)
+                                        self.data.player2_credit = sp.nat(0)
+                                    else:
+                                        self.data.winner = self.data.player2
+                                        self.data.outcome_bit = sp.Some(sp.nat(1))
+                                        self.data.player1_credit = sp.nat(0)
+                                        self.data.player2_credit = sp.nat(20)
 
         @sp.entrypoint
         def open_dispute(self):
@@ -758,6 +539,7 @@ def bet_contract():
             if sp.sender == self.data.player1.unwrap_some():
                 assert self.data.player1_query_round.is_none(), "ALREADY_SUBMITTED"
 
+                # Flatten nested checkpoint verification with else if chain
                 if params.round_index == self.data.checkpoint_round_1:
                     assert (
                         params.state_hash == self.data.player1_checkpoint1.unwrap_some()
@@ -796,6 +578,7 @@ def bet_contract():
                 )
                 assert self.data.player2_query_round.is_none(), "ALREADY_SUBMITTED"
 
+                # Flatten nested checkpoint verification with else if chain
                 if params.round_index == self.data.checkpoint_round_1:
                     assert (
                         params.state_hash == self.data.player2_checkpoint1.unwrap_some()
@@ -916,30 +699,31 @@ def bet_contract():
                 1
             ), "INVALID_FINAL_BIT"
 
+            # Cellular automaton lookup table with flattened compound conditions
+            # Table: (left, center, right) -> expected_next
             expected = sp.nat(0)
-
-            if params.left == sp.nat(0):
-                if params.center == sp.nat(0):
-                    if params.right == sp.nat(0):
-                        expected = sp.nat(0)
-                    else:
-                        expected = sp.nat(1)
-                else:
-                    if params.right == sp.nat(0):
-                        expected = sp.nat(1)
-                    else:
-                        expected = sp.nat(0)
+            if (params.left == sp.nat(0)) and (params.center == sp.nat(0)) and (params.right == sp.nat(0)):
+                expected = sp.nat(0)
             else:
-                if params.center == sp.nat(0):
-                    if params.right == sp.nat(0):
-                        expected = sp.nat(1)
-                    else:
-                        expected = sp.nat(0)
+                if (params.left == sp.nat(0)) and (params.center == sp.nat(0)) and (params.right == sp.nat(1)):
+                    expected = sp.nat(1)
                 else:
-                    if params.right == sp.nat(0):
-                        expected = sp.nat(0)
-                    else:
+                    if (params.left == sp.nat(0)) and (params.center == sp.nat(1)) and (params.right == sp.nat(0)):
                         expected = sp.nat(1)
+                    else:
+                        if (params.left == sp.nat(0)) and (params.center == sp.nat(1)) and (params.right == sp.nat(1)):
+                            expected = sp.nat(0)
+                        else:
+                            if (params.left == sp.nat(1)) and (params.center == sp.nat(0)) and (params.right == sp.nat(0)):
+                                expected = sp.nat(1)
+                            else:
+                                if (params.left == sp.nat(1)) and (params.center == sp.nat(0)) and (params.right == sp.nat(1)):
+                                    expected = sp.nat(0)
+                                else:
+                                    if (params.left == sp.nat(1)) and (params.center == sp.nat(1)) and (params.right == sp.nat(0)):
+                                        expected = sp.nat(0)
+                                    else:
+                                        expected = sp.nat(1)  # (1,1,1) case
 
             if params.player1_next == expected:
                 if params.player2_next == expected:
